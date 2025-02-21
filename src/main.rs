@@ -214,9 +214,11 @@ fn run(args: Args) -> Result<()> {
 	// Setup the blocking thread pool
 	let _ = affinitypool::Builder::new()
 		.thread_stack_size(5 * 1024 * 1024) // Set stack size to 5MiB
-		.worker_threads(args.blocking as usize) // Set the number of worker threads
+		// Make this a dedicated commit thread for SurrealKV, therefore
+		// worker_threads=1 and disable thread per core.
+		.worker_threads(1 /*args.blocking as usize*/) // Set the number of worker threads
 		.thread_name("crud-bench-threadpool") // Set the name of the threadpool threads
-		.thread_per_core(true) // Try to set a thread per core
+		// .thread_per_core(true) // Try to set a thread per core
 		.build()
 		.build_global();
 	// Display formatting
