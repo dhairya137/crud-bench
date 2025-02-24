@@ -23,7 +23,7 @@ defaults:
 jobs:
   format:
     name: Check format
-    runs-on: [runner-amd64-large]
+    runs-on: [self-hosted]
     continue-on-error: true
     steps:
       - name: Install stable toolchain
@@ -45,7 +45,7 @@ jobs:
 
   clippy:
     name: Check clippy
-    runs-on: [runner-amd64-large]
+    runs-on: [self-hosted]
     continue-on-error: true
     steps:
       - name: Install stable toolchain
@@ -67,7 +67,7 @@ jobs:
 
   test:
     name: Check tests
-    runs-on: [runner-amd64-large]
+    runs-on: [self-hosted]
     continue-on-error: true
     steps:
       - name: Install stable toolchain
@@ -91,7 +91,7 @@ jobs:
       matrix:
         include:
           - name: amd64
-            runner: runner-amd64-large
+            runner: self-hosted
             target: x86_64-unknown-linux-gnu
           - name: arm64
             runner: runner-arm64-large
@@ -122,7 +122,7 @@ jobs:
 
   docker-build:
     name: Build Docker image
-    runs-on: [runner-amd64-large-private]
+    runs-on: [self-hosted-private]
     needs: build
     continue-on-error: true
     steps:
@@ -193,7 +193,7 @@ jobs:
   benchmark:
     name: Benchmark ${{ matrix.description }}
     needs: build
-    runs-on: [runner-amd64-large-private]
+    runs-on: [self-hosted-private]
     continue-on-error: true
     strategy:
       fail-fast: false
