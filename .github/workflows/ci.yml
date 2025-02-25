@@ -260,8 +260,8 @@ jobs:
         run: |
           # Clean up data directory
           # rm -rf /tmp/crud-bench
-          mkdir /tmp/crud-bench
-          chmod 777 /tmp/crud-bench
+          # mkdir /tmp/crud-bench
+          # chmod 777 /tmp/crud-bench
           # Remove old results
           rm -f result*.json
           rm -f result*.csv
