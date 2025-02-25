@@ -8,7 +8,7 @@ function App() {
   const [activeTab, setActiveTab] = useState('OPS');
   const fileInputRef = useRef(null);
 
-  // Define operations to display - matches what you showed in your images
+  // Define operations to display
   const operations = [
     '[C]reate',
     '[R]ead', 
@@ -197,46 +197,108 @@ function App() {
     }
   };
 
+  // Parse value to numeric for comparison
+  const parseValueForComparison = (value) => {
+    if (value === undefined || value === null || value === '') {
+      return null;
+    }
+    
+    // If already a number, return it
+    if (typeof value === 'number') {
+      return value;
+    }
+    
+    // Handle time format like "1h 7m", "5m 5s", "16s 555ms", etc.
+    if (typeof value === 'string') {
+      let totalMilliseconds = 0;
+      
+      // Hours
+      const hourMatch = value.match(/(\d+)h/);
+      if (hourMatch) {
+        totalMilliseconds += parseInt(hourMatch[1]) * 60 * 60 * 1000;
+      }
+      
+      // Minutes
+      const minuteMatch = value.match(/(\d+)m(?!s)/);
+      if (minuteMatch) {
+        totalMilliseconds += parseInt(minuteMatch[1]) * 60 * 1000;
+      }
+      
+      // Seconds
+      const secondMatch = value.match(/(\d+)s/);
+      if (secondMatch) {
+        totalMilliseconds += parseInt(secondMatch[1]) * 1000;
+      }
+      
+      // Milliseconds
+      const msMatch = value.match(/(\d+)ms/);
+      if (msMatch) {
+        totalMilliseconds += parseInt(msMatch[1]);
+      }
+      
+      // Microseconds
+      const usMatch = value.match(/(\d+)µs|(\d+)us/);
+      if (usMatch) {
+        const usValue = usMatch[1] || usMatch[2];
+        totalMilliseconds += parseInt(usValue) / 1000;
+      }
+      
+      // If we found time units, return the calculated milliseconds
+      if (totalMilliseconds > 0) {
+        return totalMilliseconds;
+      }
+      
+      // Otherwise, try to extract numeric values
+      const numericMatch = value.replace(/[^0-9.]/g, '');
+      if (numericMatch) {
+        return parseFloat(numericMatch);
+      }
+    }
+    
+    return null;
+  };
+
   // Find the best value for a given operation and metric
   const findBestValue = (operation, metricKey) => {
     const metric = metrics[metricKey];
     if (!metric) return null;
     
-    let bestValue = null;
     let bestDb = null;
+    let bestValue = null;
     
+    // Map to store numeric values for comparison
+    const dbValues = {};
+    
+    // First pass: extract and convert all values to comparable numbers
     databases.forEach(db => {
       const dbData = benchmarkData[db];
       if (dbData && dbData[operation]) {
         const value = dbData[operation][metricKey];
-        if (value !== undefined && value !== null && value !== '') {
-          // For numeric values, parse them
-          let numericValue = value;
-          if (typeof value === 'string') {
-            // Remove any non-numeric characters except decimal points for numeric comparison
-            const numStr = value.replace(/[^0-9.]/g, '');
-            if (numStr) {
-              numericValue = parseFloat(numStr);
-            }
-          }
-          
-          if (bestValue === null) {
-            bestValue = numericValue;
-            bestDb = db;
-          } else if (metric.isHigherBetter) {
-            if (numericValue > bestValue) {
-              bestValue = numericValue;
-              bestDb = db;
-            }
-          } else {
-            if (numericValue < bestValue) {
-              bestValue = numericValue;
-              bestDb = db;
-            }
-          }
+        const numericValue = parseValueForComparison(value);
+        
+        if (numericValue !== null) {
+          dbValues[db] = numericValue;
         }
       }
     });
+    
+    // Second pass: find the best value
+    for (const [db, value] of Object.entries(dbValues)) {
+      if (bestValue === null) {
+        bestValue = value;
+        bestDb = db;
+      } else if (metric.isHigherBetter) {
+        if (value > bestValue) {
+          bestValue = value;
+          bestDb = db;
+        }
+      } else {
+        if (value < bestValue) {
+          bestValue = value;
+          bestDb = db;
+        }
+      }
+    }
     
     return bestDb;
   };
