@@ -392,7 +392,17 @@ function App() {
       const value = dbData[operation][metricKey];
       if (value === null || value === '') return '-';
       
-      // Format ms values to more readable format
+      // For OPS (Operations Per Second), don't convert to time format
+      if (metricKey === 'OPS') {
+        // Try to apply formatting from the metric definition
+        try {
+          return metric.format(value);
+        } catch (e) {
+          return value;
+        }
+      }
+      
+      // Format ms values to more readable format for time-based metrics
       if (typeof value === 'string' || typeof value === 'number') {
         // Check if the value has "ms" in it or is just a number
         const isMsValue = typeof value === 'string' && value.includes('ms');
