@@ -35,7 +35,40 @@ function App() {
       title: 'Total Time',
       description: 'Wall time - Lower is better - Time from start to finish as measured by a clock',
       isHigherBetter: false,
-      format: (val) => val
+      format: (val) => {
+        // Try to convert string values with ms to a number
+        const msMatch = typeof val === 'string' ? val.match(/(\d+(\.\d+)?)(\s*)ms/) : null;
+        if (msMatch) {
+          // Value is already in milliseconds format
+          const ms = parseFloat(msMatch[1]);
+          
+          // Format based on size
+          if (ms >= 60000) {
+            // More than a minute
+            const minutes = Math.floor(ms / 60000);
+            const seconds = Math.floor((ms % 60000) / 1000);
+            const remainingMs = Math.floor(ms % 1000);
+            if (seconds === 0 && remainingMs === 0) {
+              return `${minutes}m`;
+            } else if (remainingMs === 0) {
+              return `${minutes}m ${seconds}s`;
+            } else {
+              return `${minutes}m ${seconds}s ${remainingMs}ms`;
+            }
+          } else if (ms >= 1000) {
+            // More than a second
+            const seconds = Math.floor(ms / 1000);
+            const remainingMs = Math.floor(ms % 1000);
+            if (remainingMs === 0) {
+              return `${seconds}s`;
+            } else {
+              return `${seconds}s ${remainingMs}ms`;
+            }
+          }
+        }
+        
+        return val;
+      }
     },
     'Mean': {
       title: 'Mean Response Time',
@@ -312,6 +345,42 @@ function App() {
     return {};
   };
 
+  // Format a millisecond value to a human-readable format
+  const formatMilliseconds = (ms) => {
+    if (ms >= 3600000) {
+      // Hours format
+      const hours = Math.floor(ms / 3600000);
+      const minutes = Math.floor((ms % 3600000) / 60000);
+      const seconds = Math.floor((ms % 60000) / 1000);
+      
+      let result = `${hours}h`;
+      if (minutes > 0) result += ` ${minutes}m`;
+      if (seconds > 0) result += ` ${seconds}s`;
+      
+      return result;
+    } else if (ms >= 60000) {
+      // Minutes format
+      const minutes = Math.floor(ms / 60000);
+      const seconds = Math.floor((ms % 60000) / 1000);
+      const remainingMs = Math.round(ms % 1000);
+      
+      let result = `${minutes}m`;
+      if (seconds > 0) result += ` ${seconds}s`;
+      if (remainingMs > 0) result += ` ${remainingMs}ms`;
+      
+      return result;
+    } else if (ms >= 1000) {
+      // Seconds format
+      const seconds = Math.floor(ms / 1000);
+      const remainingMs = Math.round(ms % 1000);
+      
+      return remainingMs > 0 ? `${seconds}s ${remainingMs}ms` : `${seconds}s`;
+    } else {
+      // Just milliseconds
+      return `${Math.round(ms)}ms`;
+    }
+  };
+
   // Get value for a given database, operation, and metric
   const getValue = (db, operation, metricKey) => {
     const metric = metrics[metricKey];
@@ -323,7 +392,21 @@ function App() {
       const value = dbData[operation][metricKey];
       if (value === null || value === '') return '-';
       
-      // Try to apply formatting
+      // Format ms values to more readable format
+      if (typeof value === 'string' || typeof value === 'number') {
+        // Check if the value has "ms" in it or is just a number
+        const isMsValue = typeof value === 'string' && value.includes('ms');
+        const numValue = typeof value === 'string' 
+          ? parseFloat(value.replace(/[^0-9.]/g, '')) 
+          : value;
+        
+        // If this is likely a millisecond value and it's large enough to reformat
+        if (!isNaN(numValue) && (isMsValue || numValue > 1000)) {
+          return formatMilliseconds(numValue);
+        }
+      }
+      
+      // Try to apply formatting from the metric definition
       try {
         return metric.format(value);
       } catch (e) {
