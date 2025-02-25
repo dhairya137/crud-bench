@@ -133,7 +133,7 @@ jobs:
 
   benchmark:
     name: Benchmark ${{ matrix.description }}
-    needs: build
+    # needs: build
     runs-on: [self-hosted]
     continue-on-error: true
     strategy:
