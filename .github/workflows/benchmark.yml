@@ -103,33 +103,33 @@ defaults:
     shell: bash
 
 jobs:
-  build:
-    name: Build crud-bench
-    runs-on: [self-hosted]
-    steps:
-      - name: Install stable toolchain
-        uses: dtolnay/rust-toolchain@stable
+  # build:
+  #   name: Build crud-bench
+  #   runs-on: [self-hosted]
+  #   steps:
+  #     - name: Install stable toolchain
+  #       uses: dtolnay/rust-toolchain@stable
 
-      - name: Checkout sources
-        uses: actions/checkout@v4
+  #     - name: Checkout sources
+  #       uses: actions/checkout@v4
 
-      - name: Setup cache
-        uses: Swatinem/rust-cache@v2
-        with:
-          cache-on-failure: true
-          save-if: ${{ github.ref == 'refs/heads/main' }}
+  #     - name: Setup cache
+  #       uses: Swatinem/rust-cache@v2
+  #       with:
+  #         cache-on-failure: true
+  #         save-if: ${{ github.ref == 'refs/heads/main' }}
 
-      - name: Build benchmark
-        run: cargo build --release --target x86_64-unknown-linux-gnu
+  #     - name: Build benchmark
+  #       run: cargo build --release --target x86_64-unknown-linux-gnu
 
-      - name: Store artifacts
-        run: cp target/x86_64-unknown-linux-gnu/release/crud-bench crud-bench
+  #     - name: Store artifacts
+  #       run: cp target/x86_64-unknown-linux-gnu/release/crud-bench crud-bench
 
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: crud-bench
-          path: crud-bench
+  #     - name: Upload artifacts
+  #       uses: actions/upload-artifact@v4
+  #       with:
+  #         name: crud-bench
+  #         path: crud-bench
 
   benchmark:
     name: Benchmark ${{ matrix.description }}
@@ -284,14 +284,14 @@ jobs:
             enabled: true
             description: SurrealKV
     steps:
-      - name: Download artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: ${{ github.workspace }}/artifacts
-          merge-multiple: true
+      # - name: Download artifacts
+      #   uses: actions/download-artifact@v4
+      #   with:
+      #     path: ${{ github.workspace }}/artifacts
+      #     merge-multiple: true
 
-      - name: Set file permissions
-        run: chmod +x ${{ github.workspace }}/artifacts/crud-bench
+      # - name: Set file permissions
+      #   run: chmod +x ${{ github.workspace }}/artifacts/crud-bench
 
       # - name: Login to Docker Hub
         # uses: docker/login-action@v3
@@ -302,6 +302,19 @@ jobs:
       - name: ${{ matrix.skipped || 'Benchmark processing' }}
         if: ${{ !matrix.enabled }}
         run: echo "${{ matrix.skipped }}"
+      
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Download crud-bench from S3
+        run: |
+          mkdir -p ${{ github.workspace }}/bin
+          aws s3 cp s3://crud-bench/crud-bench ${{ github.workspace }}/bin/crud-bench
+          chmod +x ${{ github.workspace }}/bin/crud-bench
 
       - name: Clean up environment
         if: ${{ matrix.enabled && ( github.event.inputs.datastore == 'all' || contains(matrix.name, github.event.inputs.datastore) || ( github.event.inputs.datastore == 'custom' && contains(github.event.inputs.custom, matrix.name) ) ) && (success() || failure()) }}
@@ -361,24 +374,24 @@ jobs:
         continue-on-error: true
         timeout-minutes: ${{ fromJSON(github.event.inputs.timeout) }}
         if: ${{ matrix.enabled && ( github.event.inputs.datastore == 'all' || contains(matrix.name, github.event.inputs.datastore) || ( github.event.inputs.datastore == 'custom' && contains(github.event.inputs.custom, matrix.name) ) ) && (success() || failure()) }}
-        run: ${{ matrix.environment || '' }} sudo taskset -c 0-$(($(nproc) - 1)) sudo nice -n -20 sudo ionice -c 1 -n 0 sudo ${{ github.workspace }}/artifacts/crud-bench --privileged ${{ github.event.inputs.sync == 'true' && '--sync' || '' }} -d ${{ matrix.database }} ${{ matrix.endpoint || '' }} -s ${{ github.event.inputs.samples }} -c ${{ github.event.inputs.clients }} -t ${{ github.event.inputs.threads }} -k ${{ github.event.inputs.key-type }} -n benchmark -r
+        run: ${{ matrix.environment || '' }} sudo taskset -c 0-$(($(nproc) - 1)) sudo nice -n -20 sudo ionice -c 1 -n 0 sudo ${{ github.workspace }}/bin/crud-bench --privileged ${{ github.event.inputs.sync == 'true' && '--sync' || '' }} -d ${{ matrix.database }} ${{ matrix.endpoint || '' }} -s ${{ github.event.inputs.samples }} -c ${{ github.event.inputs.clients }} -t ${{ github.event.inputs.threads }} -k ${{ github.event.inputs.key-type }} -n benchmark -r
         env:
           CRUD_BENCH_LMDB_DATABASE_SIZE: 32212254720 # 30 GiB
           CRUD_BENCH_VALUE: ${{ github.event.inputs.value }}
 
-      - name: Normalise system
-        if: ${{ matrix.enabled && ( github.event.inputs.datastore == 'all' || contains(matrix.name, github.event.inputs.datastore) || ( github.event.inputs.datastore == 'custom' && contains(github.event.inputs.custom, matrix.name) ) ) && (success() || failure()) }}
-        run: |
-          # Enable services
-          sudo systemctl start unattended-upgrades
-          # Flush disk writes
-          sync
-          # Clear page tables
-          echo 1 | sudo tee /proc/sys/vm/compact_memory
-          # Drop memory caches
-          echo 3 | sudo tee /proc/sys/vm/drop_caches
-          # Enable Transparent Hugh Pages
-          echo always | sudo tee /sys/kernel/mm/transparent_hugepage/enabled
+      # - name: Normalise system
+      #   if: ${{ matrix.enabled && ( github.event.inputs.datastore == 'all' || contains(matrix.name, github.event.inputs.datastore) || ( github.event.inputs.datastore == 'custom' && contains(github.event.inputs.custom, matrix.name) ) ) && (success() || failure()) }}
+      #   run: |
+      #     # Enable services
+      #     sudo systemctl start unattended-upgrades
+      #     # Flush disk writes
+      #     sync
+      #     # Clear page tables
+      #     echo 1 | sudo tee /proc/sys/vm/compact_memory
+      #     # Drop memory caches
+      #     echo 3 | sudo tee /proc/sys/vm/drop_caches
+      #     # Enable Transparent Hugh Pages
+      #     echo always | sudo tee /sys/kernel/mm/transparent_hugepage/enabled
 
       - name: Upload result artifacts
         uses: actions/upload-artifact@v4
