@@ -59,7 +59,8 @@ jobs:
   benchmark:
     name: Benchmark ${{ matrix.description }}
     # needs: build
-    runs-on: [self-hosted]
+    # runs-on: [self-hosted]
+    runs-on: [r6i]
     continue-on-error: true
     strategy:
       fail-fast: false
