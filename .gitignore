@@ -81,4 +81,4 @@ tasks.json
 tasks/ 
 
 *result*.json
-bin/
+go-crud/bin/
