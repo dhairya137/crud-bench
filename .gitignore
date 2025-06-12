@@ -55,3 +55,27 @@ result.json
 result-*.json
 result.csv
 result-*.csv
+
+# Added by Task Master AI
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+dev-debug.log
+# Dependency directories
+node_modules/
+# Environment variables
+.env
+# Editor directories and files
+.idea
+.vscode
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+# OS specific
+# Task files
+tasks.json
+tasks/ 
