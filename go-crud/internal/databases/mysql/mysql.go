@@ -5,16 +5,19 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"io"
+	"log"
 	"strings"
 	"time"
 
 	_ "github.com/go-sql-driver/mysql"
+	mysqldriver "github.com/go-sql-driver/mysql"
 	"github.com/surrealdb/go-crud-bench/internal/config"
 	"github.com/surrealdb/go-crud-bench/internal/docker"
 )
 
+// Default MySQL Docker image
 const (
-	// Default MySQL Docker image
 	defaultImage = "mysql:8.0"
 	
 	// Default MySQL port
@@ -28,9 +31,17 @@ const (
 	// Table name
 	tableName = "bench_table"
 	
-	// Container name
-	containerName = "crud-bench-mysql"
+	// Container name prefix
+	containerNamePrefix = "crud-bench-mysql"
 )
+
+// setupLogSilencer disables noisy MySQL driver logs during container startup
+func setupLogSilencer() {
+	// Create a silent logger that discards all output
+	silentLogger := log.New(io.Discard, "", 0)
+	// Set the MySQL driver to use our silent logger
+	mysqldriver.SetLogger(silentLogger)
+}
 
 // Adapter implements the benchmark.Adapter interface for MySQL
 type Adapter struct {
@@ -39,10 +50,14 @@ type Adapter struct {
 	endpoint   string
 	image      string
 	privileged bool
+	containerID string
 }
 
 // NewAdapter creates a new MySQL adapter
 func NewAdapter(endpoint, image string, privileged bool) *Adapter {
+	// Silence MySQL driver logs during container startup
+	setupLogSilencer()
+	
 	if image == "" {
 		image = defaultImage
 	}
@@ -66,6 +81,7 @@ func (a *Adapter) Initialize(ctx context.Context) error {
 		}
 		
 		a.container = container
+		a.containerID = container.ID
 		dsn = fmt.Sprintf("%s:%s@tcp(127.0.0.1:%s)/", defaultUser, defaultPassword, defaultPort)
 	} else {
 		// Use provided endpoint
@@ -117,8 +133,9 @@ func (a *Adapter) Cleanup(ctx context.Context) error {
 		}
 	}
 	
-	// Stop container if it was started
+	// Stop and remove container if it was started
 	if a.container != nil {
+		fmt.Printf("Cleaning up MySQL container %s...\n", a.containerID)
 		if err := a.container.Stop(ctx); err != nil {
 			return fmt.Errorf("failed to stop MySQL container: %w", err)
 		}
@@ -341,6 +358,9 @@ func (a *Adapter) createTable(ctx context.Context) error {
 
 // startContainer starts a MySQL Docker container
 func (a *Adapter) startContainer(ctx context.Context) (*docker.Container, error) {
+	// Generate unique container name with timestamp
+	containerName := fmt.Sprintf("%s-%d", containerNamePrefix, time.Now().Unix())
+	
 	// Configure container
 	ports := map[string]string{
 		"3306/tcp": defaultPort,
@@ -350,6 +370,8 @@ func (a *Adapter) startContainer(ctx context.Context) (*docker.Container, error)
 		fmt.Sprintf("MYSQL_ROOT_PASSWORD=%s", defaultPassword),
 		fmt.Sprintf("MYSQL_DATABASE=%s", defaultDatabase),
 	}
+	
+	fmt.Printf("Starting MySQL container '%s' with image '%s'...\n", containerName, a.image)
 	
 	// Create container
 	container, err := docker.NewContainer(containerName, a.image, ports, a.privileged, env)
@@ -362,10 +384,23 @@ func (a *Adapter) startContainer(ctx context.Context) (*docker.Container, error)
 		return nil, fmt.Errorf("failed to start container: %w", err)
 	}
 	
-	fmt.Println("MySQL container started, waiting for it to be ready...")
+	fmt.Printf("MySQL container started, waiting for it to be ready...\n")
 	
-	// Wait for MySQL to be ready with increased timeout (60 seconds)
+	printedStartup := false
+	attemptCount := 0
+	// Wait for MySQL to be ready with increased timeout (90 seconds)
 	checkFunc := func(ctx context.Context) error {
+		if !printedStartup {
+			fmt.Println("MySQL container is starting up...")
+			printedStartup = true
+		} else {
+			attemptCount++
+			if attemptCount % 5 == 0 {
+				// Print status update every 5 attempts
+				fmt.Println("Still waiting for MySQL to be ready...")
+			}
+		}
+		
 		db, err := sql.Open("mysql", fmt.Sprintf("%s:%s@tcp(127.0.0.1:%s)/", defaultUser, defaultPassword, defaultPort))
 		if err != nil {
 			return err
@@ -381,22 +416,36 @@ func (a *Adapter) startContainer(ctx context.Context) (*docker.Container, error)
 		
 		err = db.PingContext(ctx)
 		if err != nil {
-			fmt.Printf("MySQL ping failed: %v, retrying...\n", err)
+			// Not printing error message, just returning it
+			return err
+		}
+		
+		// Create database if it doesn't exist
+		_, err = db.ExecContext(ctx, fmt.Sprintf("CREATE DATABASE IF NOT EXISTS %s", defaultDatabase))
+		if err != nil {
+			// Not printing error message, just returning it
+			return err
+		}
+		
+		// Select the database
+		_, err = db.ExecContext(ctx, fmt.Sprintf("USE %s", defaultDatabase))
+		if err != nil {
+			// Not printing error message, just returning it
 			return err
 		}
 		
 		// Try to create a simple test table to verify MySQL is really ready
 		_, err = db.ExecContext(ctx, "CREATE TABLE IF NOT EXISTS health_check (id INT)")
 		if err != nil {
-			fmt.Printf("MySQL table creation failed: %v, retrying...\n", err)
+			// Not printing error message, just returning it
 			return err
 		}
 		
-		fmt.Println("MySQL is ready!")
+		fmt.Printf("MySQL is ready!\n")
 		return nil
 	}
 	
-	if err := container.WaitForHealthy(ctx, 60*time.Second, checkFunc); err != nil {
+	if err := container.WaitForHealthy(ctx, 90*time.Second, checkFunc); err != nil {
 		// Clean up container if health check fails
 		_ = container.Stop(ctx)
 		return nil, fmt.Errorf("MySQL health check failed: %w", err)

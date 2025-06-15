@@ -42,10 +42,31 @@ func NewContainer(name, image string, ports map[string]string, privileged bool, 
 
 // Start starts the Docker container
 func (c *Container) Start(ctx context.Context) error {
-	// Pull the image
-	_, err := c.Client.ImagePull(ctx, c.Image, types.ImagePullOptions{})
+	// Check if image exists, pull if not
+	images, err := c.Client.ImageList(ctx, types.ImageListOptions{})
 	if err != nil {
-		return fmt.Errorf("failed to pull Docker image %s: %w", c.Image, err)
+		return fmt.Errorf("failed to list images: %w", err)
+	}
+	
+	imageExists := false
+	for _, img := range images {
+		for _, tag := range img.RepoTags {
+			if tag == c.Image {
+				imageExists = true
+				break
+			}
+		}
+		if imageExists {
+			break
+		}
+	}
+	
+	if !imageExists {
+		fmt.Printf("Pulling Docker image %s...\n", c.Image)
+		_, err := c.Client.ImagePull(ctx, c.Image, types.ImagePullOptions{})
+		if err != nil {
+			return fmt.Errorf("failed to pull Docker image %s: %w", c.Image, err)
+		}
 	}
 
 	// Prepare port bindings
@@ -74,6 +95,7 @@ func (c *Container) Start(ctx context.Context) error {
 		&container.HostConfig{
 			PortBindings: portBindings,
 			Privileged:   c.Privileged,
+			AutoRemove:   true, // Automatically remove container when it stops
 		},
 		&network.NetworkingConfig{},
 		nil,
@@ -99,19 +121,22 @@ func (c *Container) Stop(ctx context.Context) error {
 		return nil
 	}
 
+	fmt.Printf("Stopping container %s...\n", c.ID)
+	
 	// Stop container
-	timeout := 10 * time.Second
+	timeout := 30 * time.Second
 	if err := c.Client.ContainerStop(ctx, c.ID, &timeout); err != nil {
 		return fmt.Errorf("failed to stop container: %w", err)
 	}
 
-	// Remove container
+	// Remove container (with force in case it's still running)
 	if err := c.Client.ContainerRemove(ctx, c.ID, types.ContainerRemoveOptions{
 		Force: true,
 	}); err != nil {
 		return fmt.Errorf("failed to remove container: %w", err)
 	}
 
+	fmt.Printf("Container %s stopped and removed\n", c.ID)
 	return nil
 }
 
@@ -137,7 +162,7 @@ func (c *Container) WaitForHealthy(ctx context.Context, timeout time.Duration, c
 			}
 		}
 		
-		time.Sleep(500 * time.Millisecond)
+		time.Sleep(1 * time.Second)
 	}
 	
 	return fmt.Errorf("container health check timed out after %v", timeout)
