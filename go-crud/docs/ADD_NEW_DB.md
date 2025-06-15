@@ -11,6 +11,7 @@ This document provides detailed instructions on how to add support for a new dat
 5. [Error Handling and Logging](#error-handling-and-logging)
 6. [Testing Your Adapter](#testing-your-adapter)
 7. [Example Implementation: MySQL](#example-implementation-mysql)
+8. [Using Docker Helper Utilities](#using-docker-helper-utilities)
 
 ## Overview
 
@@ -56,6 +57,8 @@ func NewAdapter(dbType, endpoint, image string, privileged bool) (benchmark.Adap
     switch dbType {
     case "mysql":
         return mysql.NewAdapter(endpoint, image, privileged), nil
+    case "postgres":
+        return postgres.NewAdapter(endpoint, image, privileged), nil
     case "yourdatabase":
         return yourdatabase.NewAdapter(endpoint, image, privileged), nil
     // Add more database types here
@@ -203,7 +206,15 @@ const (
 
 ### 2. Create a startContainer Method
 
+Instead of implementing your own container start logic, use the helper utilities from `internal/dbutils` to ensure proper image pulling and container creation:
+
 ```go
+import (
+    "github.com/surrealdb/go-crud-bench/internal/dbutils"
+    "github.com/surrealdb/go-crud-bench/internal/docker"
+)
+
+// startContainer starts a Docker container for your database
 func (a *Adapter) startContainer(ctx context.Context) (*docker.Container, error) {
     // Generate unique container name with timestamp
     containerName := fmt.Sprintf("%s-%d", containerNamePrefix, time.Now().Unix())
@@ -221,46 +232,16 @@ func (a *Adapter) startContainer(ctx context.Context) (*docker.Container, error)
 
     fmt.Printf("Starting YourDatabase container '%s' with image '%s'...\n", containerName, a.image)
 
-    // Create container
-    container, err := docker.NewContainer(containerName, a.image, ports, a.privileged, env)
+    // Create and start container with the common utility
+    container, err := dbutils.CreateContainerWithRetry(ctx, containerName, a.image, ports, a.privileged, env)
     if err != nil {
-        return nil, fmt.Errorf("failed to create container: %w", err)
-    }
-
-    // Start container
-    if err := container.Start(ctx); err != nil {
-        return nil, fmt.Errorf("failed to start container: %w", err)
+        return nil, fmt.Errorf("failed to start YourDatabase container: %w", err)
     }
 
     fmt.Printf("YourDatabase container started, waiting for it to be ready...\n")
 
-    // Wait for the database to be ready
-    printedStartup := false
-    attemptCount := 0
-    checkFunc := func(ctx context.Context) error {
-        if !printedStartup {
-            fmt.Println("YourDatabase container is starting up...")
-            printedStartup = true
-        } else {
-            attemptCount++
-            if attemptCount % 5 == 0 {
-                // Print status update every 5 attempts
-                fmt.Println("Still waiting for YourDatabase to be ready...")
-            }
-        }
-
-        // Implement your database-specific health check here
-        // For example, try to connect and execute a simple query
-
-        fmt.Printf("YourDatabase is ready!\n")
-        return nil
-    }
-
-    if err := container.WaitForHealthy(ctx, 90*time.Second, checkFunc); err != nil {
-        // Clean up container if health check fails
-        _ = container.Stop(ctx)
-        return nil, fmt.Errorf("YourDatabase health check failed: %w", err)
-    }
+    // Implement health check logic for your database
+    // ...
 
     return container, nil
 }
@@ -314,6 +295,7 @@ import (
     mysqldriver "github.com/go-sql-driver/mysql"
     _ "github.com/go-sql-driver/mysql"
     "github.com/surrealdb/go-crud-bench/internal/config"
+    "github.com/surrealdb/go-crud-bench/internal/dbutils"
     "github.com/surrealdb/go-crud-bench/internal/docker"
 )
 
@@ -364,72 +346,91 @@ func NewAdapter(endpoint, image string, privileged bool) *Adapter {
 }
 ```
 
-### Initialize Method
+### Using Docker Helper Utilities
+
+The adapter uses the common Docker helper utilities to start containers and ensure images are available:
 
 ```go
-// Initialize sets up the MySQL database
-func (a *Adapter) Initialize(ctx context.Context) error {
-    var dsn string
+// startContainer starts a MySQL Docker container
+func (a *Adapter) startContainer(ctx context.Context) (*docker.Container, error) {
+    // Generate unique container name with timestamp
+    containerName := fmt.Sprintf("%s-%d", containerNamePrefix, time.Now().Unix())
 
-    // If no endpoint is provided, start a Docker container
-    if a.endpoint == "" {
-        container, err := a.startContainer(ctx)
-        if err != nil {
-            return fmt.Errorf("failed to start MySQL container: %w", err)
-        }
-
-        a.container = container
-        a.containerID = container.ID
-        dsn = fmt.Sprintf("%s:%s@tcp(127.0.0.1:%s)/", defaultUser, defaultPassword, defaultPort)
-    } else {
-        // Use provided endpoint
-        dsn = a.endpoint
+    // Configure container
+    ports := map[string]string{
+        "3306/tcp": defaultPort,
     }
 
-    // Connect to MySQL server
-    db, err := sql.Open("mysql", dsn)
+    env := []string{
+        fmt.Sprintf("MYSQL_ROOT_PASSWORD=%s", defaultPassword),
+        fmt.Sprintf("MYSQL_DATABASE=%s", defaultDatabase),
+    }
+
+    fmt.Printf("Starting MySQL container '%s' with image '%s'...\n", containerName, a.image)
+
+    // Create and start container with the common utility
+    container, err := dbutils.CreateContainerWithRetry(ctx, containerName, a.image, ports, a.privileged, env)
     if err != nil {
-        return fmt.Errorf("failed to connect to MySQL: %w", err)
+        return nil, fmt.Errorf("failed to start MySQL container: %w", err)
     }
 
-    // Set connection pool parameters
-    db.SetMaxOpenConns(100)
-    db.SetMaxIdleConns(20)
-    db.SetConnMaxLifetime(time.Hour)
-
-    // Test connection
-    if err := db.PingContext(ctx); err != nil {
-        return fmt.Errorf("failed to ping MySQL: %w", err)
-    }
-
-    a.db = db
-
-    // Create database if it doesn't exist
-    if _, err := db.ExecContext(ctx, fmt.Sprintf("CREATE DATABASE IF NOT EXISTS %s", defaultDatabase)); err != nil {
-        return fmt.Errorf("failed to create database: %w", err)
-    }
-
-    // Use the database
-    if _, err := db.ExecContext(ctx, fmt.Sprintf("USE %s", defaultDatabase)); err != nil {
-        return fmt.Errorf("failed to use database: %w", err)
-    }
-
-    // Create table
-    if err := a.createTable(ctx); err != nil {
-        return fmt.Errorf("failed to create table: %w", err)
-    }
-
-    return nil
+    // Continue with health check logic
+    // ...
 }
 ```
 
-### CRUD Operations
+## Using Docker Helper Utilities
 
-The adapter implements all required CRUD operations (Create, Read, Update, Delete) and Scan operations according to the interface.
+The application provides helper utilities in the `internal/dbutils` package to simplify Docker container management and image pulling. These utilities ensure that your database adapter will work correctly even when the required Docker images are not already present on the user's system.
 
-### Container Management
+### Import the dbutils Package
 
-Includes container creation, startup, health checking, and cleanup.
+```go
+import "github.com/surrealdb/go-crud-bench/internal/dbutils"
+```
+
+### Available Utilities
+
+#### EnsureDockerImage
+
+This function checks if the specified Docker image exists locally and pulls it if necessary:
+
+```go
+pulled, err := dbutils.EnsureDockerImage("yourdatabase:latest")
+if err != nil {
+    return fmt.Errorf("failed to ensure Docker image: %w", err)
+}
+if pulled {
+    fmt.Println("Image was pulled successfully")
+}
+```
+
+#### CreateContainerWithRetry
+
+This function handles the entire process of creating and starting a Docker container, including automatic image pulling if needed:
+
+```go
+container, err := dbutils.CreateContainerWithRetry(
+    ctx,
+    containerName,
+    imageName,
+    ports,
+    privileged,
+    env,
+)
+if err != nil {
+    return nil, fmt.Errorf("failed to create and start container: %w", err)
+}
+```
+
+### Benefits of Using These Utilities
+
+1. **Better User Experience**: Users won't encounter errors just because they don't have the required Docker images.
+2. **Automatic Image Pulling**: The system handles image pulls transparently with proper console feedback.
+3. **Error Resilience**: Even if the image pull fails initially, the system will attempt a manual pull as a fallback.
+4. **Consistent Implementation**: All database adapters will have the same reliable container creation behavior.
+
+By using these utilities in your adapter implementation, you ensure that your database adapter will be robust against missing Docker images and provide a consistent user experience.
 
 ---
 
