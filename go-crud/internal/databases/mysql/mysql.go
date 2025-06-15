@@ -13,6 +13,7 @@ import (
 	_ "github.com/go-sql-driver/mysql"
 	mysqldriver "github.com/go-sql-driver/mysql"
 	"github.com/surrealdb/go-crud-bench/internal/config"
+	"github.com/surrealdb/go-crud-bench/internal/dbutils"
 	"github.com/surrealdb/go-crud-bench/internal/docker"
 )
 
@@ -373,15 +374,10 @@ func (a *Adapter) startContainer(ctx context.Context) (*docker.Container, error)
 	
 	fmt.Printf("Starting MySQL container '%s' with image '%s'...\n", containerName, a.image)
 	
-	// Create container
-	container, err := docker.NewContainer(containerName, a.image, ports, a.privileged, env)
+	// Create and start container with the common utility
+	container, err := dbutils.CreateContainerWithRetry(ctx, containerName, a.image, ports, a.privileged, env)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create container: %w", err)
-	}
-	
-	// Start container
-	if err := container.Start(ctx); err != nil {
-		return nil, fmt.Errorf("failed to start container: %w", err)
+		return nil, fmt.Errorf("failed to start MySQL container: %w", err)
 	}
 	
 	fmt.Printf("MySQL container started, waiting for it to be ready...\n")

@@ -38,7 +38,7 @@ deps:
 
 # Example targets for common benchmarks
 mysql-test: build
-	$(BUILD_DIR)/$(BINARY_NAME) -d mysql -s 1000 -c 4 -t 8
+	$(BUILD_DIR)/$(BINARY_NAME) -d mysql -i mysql:8.1 -s 1000 -c 4 -t 8 -a '[{"name":"count_all","samples":3,"projection":"COUNT"}]'
 
-mysql-custom: build
-	$(BUILD_DIR)/$(BINARY_NAME) -d mysql -e "root:mysql@tcp(127.0.0.1:3306)/bench" -s 1000 -c 4 -t 8 
+postgres-test: build
+	$(BUILD_DIR)/$(BINARY_NAME) -d postgres -i postgres:14.2 -s 1000 -c 4 -t 8 -a '[{"name":"count_all","samples":3,"projection":"COUNT"}]'
