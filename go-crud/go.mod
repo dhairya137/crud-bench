@@ -9,6 +9,7 @@ require (
 	github.com/docker/go-connections v0.4.0
 	github.com/go-sql-driver/mysql v1.9.2
 	github.com/google/uuid v1.6.0
+	github.com/lib/pq v1.10.9
 	github.com/spf13/cobra v1.9.1
 )
 
